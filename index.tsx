@@ -12,10 +12,15 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js')
       .then(registration => {
-        console.log('SW registered: ', registration);
+        console.log('Service Worker registered successfully: ', registration);
       })
       .catch(registrationError => {
-        console.log('SW registration failed: ', registrationError);
+        // Silently fail if service worker file doesn't exist (development)
+        if (import.meta.env.DEV) {
+          console.warn('Service Worker registration skipped in development:', registrationError);
+        } else {
+          console.error('Service Worker registration failed: ', registrationError);
+        }
       });
   });
 }

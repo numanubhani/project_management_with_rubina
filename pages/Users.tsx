@@ -1,9 +1,11 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useAppStore } from '../store';
 import { UserRole } from '../types';
 import { Avatar } from '../components/ui/Avatar';
-import { UserPlus, Search, Mail, Shield, User as UserIcon, Lock } from 'lucide-react';
+import { UserPlus, Search, Mail, Shield, User as UserIcon, Lock, Download, Upload } from 'lucide-react';
+import { workspaceService } from '../api/services';
+import toast from 'react-hot-toast';
 
 export const Users: React.FC = () => {
   const { user: currentUser, users, createUser } = useAppStore();
@@ -15,8 +17,73 @@ export const Users: React.FC = () => {
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<UserRole>(UserRole.CLIENT);
   const [searchTerm, setSearchTerm] = useState('');
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!currentUser) return null;
+
+  const handleExport = async () => {
+    if (currentUser.role !== UserRole.ADMIN) {
+      toast.error('Only admins can export workspace data');
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      const blob = await workspaceService.exportWorkspaceData();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `workspace_export_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      toast.success('Workspace data exported successfully!');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to export workspace data');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (currentUser.role !== UserRole.ADMIN) {
+      toast.error('Only admins can import workspace data');
+      return;
+    }
+
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.json')) {
+      toast.error('Please select a valid JSON file');
+      return;
+    }
+
+    if (!confirm('Importing workspace data will add new records. Existing data will not be overwritten. Continue?')) {
+      return;
+    }
+
+    setIsImporting(true);
+    try {
+      const result = await workspaceService.importWorkspaceData(file);
+      toast.success(
+        `Import successful! Added ${result.imported_users} users, ${result.imported_projects} projects, ${result.imported_comments} comments, ${result.imported_updates} updates, and ${result.imported_files} file records.`
+      );
+      // Reload users and projects
+      await useAppStore.getState().loadUsers();
+      await useAppStore.getState().loadProjects();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to import workspace data');
+    } finally {
+      setIsImporting(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
 
   const workspaceUsers = users.filter(u => u.workspaceId === currentUser.workspaceId);
   const filteredUsers = workspaceUsers.filter(u => 
@@ -24,15 +91,19 @@ export const Users: React.FC = () => {
     u.email.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    createUser(name, email, password, role);
-    setShowAddModal(false);
-    // Reset form
-    setName('');
-    setEmail('');
-    setPassword('');
-    setRole(UserRole.CLIENT);
+    try {
+      await createUser(name, email, password, role);
+      setShowAddModal(false);
+      // Reset form
+      setName('');
+      setEmail('');
+      setPassword('');
+      setRole(UserRole.CLIENT);
+    } catch (error) {
+      // Error is handled in store
+    }
   };
 
   return (
@@ -42,13 +113,39 @@ export const Users: React.FC = () => {
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">User Management</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">Manage access and roles for your workspace.</p>
         </div>
-        <button 
-          onClick={() => setShowAddModal(true)}
-          className="inline-flex items-center justify-center px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-all shadow-lg shadow-blue-500/30"
-        >
-          <UserPlus size={20} className="mr-2" />
-          Add User
-        </button>
+        <div className="flex items-center gap-3">
+          {currentUser.role === UserRole.ADMIN && (
+            <>
+              <button 
+                onClick={handleExport}
+                disabled={isExporting}
+                className="inline-flex items-center justify-center px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white font-medium rounded-xl transition-all shadow-lg shadow-green-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Download size={18} className="mr-2" />
+                {isExporting ? 'Exporting...' : 'Export Data'}
+              </button>
+              <label className="inline-flex items-center justify-center px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-xl transition-all shadow-lg shadow-purple-500/30 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+                <Upload size={18} className="mr-2" />
+                {isImporting ? 'Importing...' : 'Import Data'}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".json"
+                  onChange={handleImport}
+                  disabled={isImporting}
+                  className="hidden"
+                />
+              </label>
+            </>
+          )}
+          <button 
+            onClick={() => setShowAddModal(true)}
+            className="inline-flex items-center justify-center px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-all shadow-lg shadow-blue-500/30"
+          >
+            <UserPlus size={20} className="mr-2" />
+            Add User
+          </button>
+        </div>
       </div>
 
       {/* Filters */}

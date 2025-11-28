@@ -1,5 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAppStore } from '../../store';
 import { LogOut, Moon, Sun, LayoutGrid, PlusCircle, Users, Wallet, User as UserIcon, Menu, X } from 'lucide-react';
 import { UserRole } from '../../types';
@@ -9,23 +10,32 @@ interface LayoutProps {
 }
 
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
-  const { user, logout, theme, toggleTheme, simulateIncomingProject, checkUnreadUpdates, currentPath, navigate } = useAppStore();
+  const { user, logout, theme, toggleTheme, checkUnreadUpdates } = useAppStore();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  // Simulate real-time fetching/updates
+  // Load data on mount
   useEffect(() => {
+    if (user) {
+      // Load initial data
+      const store = useAppStore.getState();
+      store.loadProjects();
+      store.loadUsers();
+    }
+  }, [user]);
+
+  // Check for updates periodically
+  useEffect(() => {
+    if (!user) return;
+    
     const interval = setInterval(() => {
-      // 10% chance every 10 seconds to receive a new project if admin
-      if (Math.random() > 0.9) {
-        simulateIncomingProject();
-      }
-      
-      // Check for Client updates (Live Fetching Simulation)
+      // Check for Client updates (Live Fetching)
       checkUnreadUpdates();
-    }, 5000); // Poll every 5 seconds
+    }, 10000); // Poll every 10 seconds
 
     return () => clearInterval(interval);
-  }, [simulateIncomingProject, checkUnreadUpdates]);
+  }, [user, checkUnreadUpdates]);
 
   if (!user) return <>{children}</>;
 
@@ -35,7 +45,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   };
 
   const NavItem = ({ to, icon: Icon, label }: { to: string, icon: any, label: string }) => {
-    const isActive = currentPath === to;
+    const isActive = location.pathname === to;
     return (
       <button
         onClick={() => handleNavigate(to)}
@@ -85,19 +95,19 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
         {/* Navigation Links */}
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-          <NavItem to="/" icon={LayoutGrid} label="Dashboard" />
+          <NavItem to={user.role === UserRole.ADMIN ? "/admin/dashboard" : "/client/dashboard"} icon={LayoutGrid} label="Dashboard" />
           
           {user.role === UserRole.CLIENT && (
-            <NavItem to="/new-project" icon={PlusCircle} label="New Project" />
+            <NavItem to="/client/new-project" icon={PlusCircle} label="New Project" />
           )}
 
-          <NavItem to="/finance" icon={Wallet} label={user.role === UserRole.ADMIN ? 'Finance' : 'History'} />
+          <NavItem to={user.role === UserRole.ADMIN ? "/admin/finance" : "/client/finance"} icon={Wallet} label={user.role === UserRole.ADMIN ? 'Finance' : 'History'} />
 
           {user.role === UserRole.ADMIN && (
-            <NavItem to="/users" icon={Users} label="Users" />
+            <NavItem to="/admin/users" icon={Users} label="Users" />
           )}
            
-          <NavItem to="/profile" icon={UserIcon} label="Profile" />
+          <NavItem to={user.role === UserRole.ADMIN ? "/admin/profile" : "/client/profile"} icon={UserIcon} label="Profile" />
         </nav>
 
         {/* User Footer */}

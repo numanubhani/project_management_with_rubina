@@ -16,8 +16,17 @@ export const Countdown: React.FC<{ deadline: string }> = ({ deadline }) => {
     return () => clearInterval(interval);
   }, [deadline]);
 
+  if (overdue) {
+    return (
+      <div className="flex items-center space-x-1 text-sm font-medium text-red-500">
+        <Clock size={14} />
+        <span>Overdue</span>
+      </div>
+    );
+  }
+
   return (
-    <div className={`flex items-center space-x-1 text-sm font-medium ${overdue ? 'text-red-500' : 'text-gray-500 dark:text-gray-400'}`}>
+    <div className="flex items-center space-x-1 text-sm font-medium text-gray-500 dark:text-gray-400">
       <Clock size={14} />
       <span>{timeStr}</span>
     </div>

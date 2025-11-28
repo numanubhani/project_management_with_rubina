@@ -1,12 +1,18 @@
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useAppStore } from '../store';
 import { UserRole, ProjectStatus } from '../types';
 import { formatCurrency, formatDate } from '../utils';
 import { DollarSign, CheckCircle, Clock, PieChart } from 'lucide-react';
 
 export const Finance: React.FC = () => {
-  const { user, projects } = useAppStore();
+  const { user, projects, loadProjects } = useAppStore();
+
+  useEffect(() => {
+    if (user) {
+      loadProjects();
+    }
+  }, [user, loadProjects]);
 
   if (!user) return null;
 

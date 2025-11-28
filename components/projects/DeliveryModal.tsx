@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../../store';
 import { X, Upload } from 'lucide-react';
-import { FileData } from '../../types';
 
 interface DeliveryModalProps {
   projectId: string;
@@ -24,21 +23,14 @@ export const DeliveryModal: React.FC<DeliveryModalProps> = ({ projectId, onClose
     if (files.length === 0) return;
 
     setIsUploading(true);
-    // Simulate upload delay
-    await new Promise(resolve => setTimeout(resolve, 1500));
-
-    const uploadedFiles: FileData[] = files.map(f => ({
-      id: Math.random().toString(36).substr(2, 9),
-      name: f.name,
-      size: `${(f.size / 1024).toFixed(1)} KB`,
-      type: f.type,
-      url: 'https://picsum.photos/200', // Mock URL
-      uploadedAt: new Date().toISOString()
-    }));
-
-    uploadDelivery(projectId, uploadedFiles);
-    setIsUploading(false);
-    onClose();
+    try {
+      await uploadDelivery(projectId, files);
+      setIsUploading(false);
+      onClose();
+    } catch (error) {
+      setIsUploading(false);
+      // Error is handled in store
+    }
   };
 
   return (
@@ -56,6 +48,7 @@ export const DeliveryModal: React.FC<DeliveryModalProps> = ({ projectId, onClose
              <input 
                type="file" 
                multiple 
+               accept="*/*"
                onChange={handleFileChange}
                className="hidden" 
                id="delivery-file-input"
@@ -63,7 +56,7 @@ export const DeliveryModal: React.FC<DeliveryModalProps> = ({ projectId, onClose
              <label htmlFor="delivery-file-input" className="cursor-pointer flex flex-col items-center">
                 <Upload size={32} className="text-gray-400 mb-2" />
                 <span className="text-sm text-gray-600 dark:text-gray-300 font-medium">Click to upload delivery files</span>
-                <span className="text-xs text-gray-400 mt-1">ZIP, PDF, PNG supported</span>
+                <span className="text-xs text-gray-400 mt-1">All file types supported: Images, PDFs, Archives, Documents, Presentations, etc.</span>
              </label>
           </div>
 

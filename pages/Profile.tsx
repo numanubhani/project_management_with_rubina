@@ -19,16 +19,20 @@ export const Profile: React.FC = () => {
 
   if (!user) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (password && password !== confirmPassword) {
       alert("Passwords don't match");
       return;
     }
-    updateUserProfile(name, password || undefined);
-    setIsEditing(false);
-    setPassword('');
-    setConfirmPassword('');
+    try {
+      await updateUserProfile(name, password || undefined);
+      setIsEditing(false);
+      setPassword('');
+      setConfirmPassword('');
+    } catch (error) {
+      // Error is handled in store
+    }
   };
 
   return (

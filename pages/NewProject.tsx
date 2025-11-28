@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store';
 import { Upload, Calendar, DollarSign, Type, ArrowLeft } from 'lucide-react';
 import { FileData } from '../types';
 
 export const NewProject: React.FC = () => {
-  const { addProject, navigate } = useAppStore();
+  const { addProject, user, loadProjects } = useAppStore();
+  const navigate = useNavigate();
   
   const [formData, setFormData] = useState({
     title: '',
@@ -30,39 +32,33 @@ export const NewProject: React.FC = () => {
     e.preventDefault();
     setIsSubmitting(true);
 
+    try {
     // Combine date and time
     const deadlineISO = new Date(`${formData.deadlineDate}T${formData.deadlineTime}`).toISOString();
 
-    // Mock File Upload
-    const uploadedFiles: FileData[] = files.map((f, i) => ({
-      id: `new-f-${i}`,
-      name: f.name,
-      size: `${(f.size / 1024).toFixed(1)} KB`,
-      type: f.type,
-      url: 'https://picsum.photos/200',
-      uploadedAt: new Date().toISOString()
-    }));
-
-    // Simulate Network
-    await new Promise(r => setTimeout(r, 1000));
-
-    addProject({
+      await addProject({
       title: formData.title,
       description: formData.description,
       amount: parseFloat(formData.amount),
       deadline: deadlineISO,
       workspaceId: '', // Filled by store
       clientId: '', // Filled by store
-    }, uploadedFiles);
+      }, files);
 
+      // Reload projects to ensure dashboard shows the new project
+      await loadProjects();
+      setIsSubmitting(false);
+      navigate('/client/dashboard');
+    } catch (error) {
     setIsSubmitting(false);
-    navigate('/');
+      // Error is handled in store
+    }
   };
 
   return (
     <div className="max-w-2xl mx-auto">
       <button 
-        onClick={() => navigate('/')} 
+        onClick={() => navigate('/client/dashboard')} 
         className="flex items-center text-gray-500 hover:text-gray-900 dark:hover:text-white mb-6 transition-colors"
       >
         <ArrowLeft size={20} className="mr-2" />
@@ -158,6 +154,7 @@ export const NewProject: React.FC = () => {
                 <input 
                     type="file" 
                     multiple
+                    accept="*/*"
                     onChange={handleFileChange}
                     className="hidden" 
                     id="project-files"
@@ -168,6 +165,7 @@ export const NewProject: React.FC = () => {
                     <span className="text-xs text-gray-400 mt-1">
                         {files.length > 0 ? `${files.length} files selected` : "Drag and drop or click"}
                     </span>
+                    <span className="text-xs text-gray-400 mt-1">Supports: Images, PDFs, Archives (ZIP, RAR), Documents (DOCX), Presentations (PPTX), and more</span>
                 </label>
              </div>
           </div>

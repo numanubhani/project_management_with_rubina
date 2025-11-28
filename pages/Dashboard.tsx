@@ -1,15 +1,107 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store';
 import { UserRole } from '../types';
 import { ProjectCard } from '../components/projects/ProjectCard';
 import { Layers, CheckCircle, Clock, AlertCircle } from 'lucide-react';
+import { projectService } from '../api/services';
+
+interface DashboardStats {
+  total: number;
+  pending: number;
+  active: number;
+  completed: number;
+}
 
 export const Dashboard: React.FC = () => {
-  const { user, projects, navigate } = useAppStore();
+  const { user, projects, loadProjects } = useAppStore();
+  const navigate = useNavigate();
+  const [stats, setStats] = useState<DashboardStats>({ total: 0, pending: 0, active: 0, completed: 0 });
+  const [loading, setLoading] = useState(true);
+
+  const fetchDashboardData = async () => {
+    if (user) {
+      setLoading(true);
+      try {
+        // Load projects from backend
+        await loadProjects();
+        
+        // Get stats from backend API
+        try {
+          const statsData = await projectService.getDashboardStats();
+          setStats({
+            total: statsData.total || 0,
+            pending: statsData.pending || 0,
+            active: statsData.active || 0,
+            completed: statsData.completed || 0,
+          });
+        } catch (statsError) {
+          console.error('Failed to load stats, calculating from projects:', statsError);
+          // Fallback to calculating from projects in store
+          const currentProjects = useAppStore.getState().projects;
+          const myProjects = currentProjects.filter(p => {
+            if (p.workspaceId !== user.workspaceId) return false;
+            if (user.role === UserRole.CLIENT) {
+              return p.clientId === user.id;
+            }
+            return true;
+          });
+          setStats({
+            total: myProjects.length,
+            pending: myProjects.filter(p => p.status === 'pending').length,
+            active: myProjects.filter(p => p.status === 'in_progress').length,
+            completed: myProjects.filter(p => p.status === 'completed' || p.status === 'delivered').length,
+          });
+        }
+      } catch (error) {
+        console.error('Failed to load dashboard data:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, [user]);
+
+  // Refresh when page becomes visible (e.g., navigating back from another page)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && user) {
+        fetchDashboardData();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [user]);
+  
+  // Refresh when projects change (e.g., after creating a new project)
+  useEffect(() => {
+    if (user && projects.length >= 0) {
+      // Recalculate stats when projects change
+      const myProjects = projects.filter(p => {
+        if (p.workspaceId !== user.workspaceId) return false;
+        if (user.role === UserRole.CLIENT) {
+          return p.clientId === user.id;
+        }
+        return true;
+      });
+      
+      // Update stats when projects change
+      setStats({
+        total: myProjects.length,
+        pending: myProjects.filter(p => p.status === 'pending').length,
+        active: myProjects.filter(p => p.status === 'in_progress').length,
+        completed: myProjects.filter(p => p.status === 'completed' || p.status === 'delivered').length,
+      });
+    }
+  }, [projects, user]);
 
   if (!user) return null;
 
-  // Filter projects based on role and workspace
+  // Filter projects based on role and workspace (from backend)
   const myProjects = projects.filter(p => {
     if (p.workspaceId !== user.workspaceId) return false;
     if (user.role === UserRole.CLIENT) {
@@ -22,13 +114,6 @@ export const Dashboard: React.FC = () => {
   const sortedProjects = [...myProjects].sort((a, b) => 
     new Date(a.deadline).getTime() - new Date(b.deadline).getTime()
   );
-
-  const stats = {
-    total: myProjects.length,
-    pending: myProjects.filter(p => p.status === 'pending').length,
-    active: myProjects.filter(p => p.status === 'in_progress').length,
-    completed: myProjects.filter(p => p.status === 'completed' || p.status === 'delivered').length,
-  };
 
   const StatCard = ({ icon: Icon, label, value, color }: any) => (
     <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex items-center space-x-4">
@@ -56,7 +141,7 @@ export const Dashboard: React.FC = () => {
         </div>
         {user.role === UserRole.CLIENT && (
           <button 
-            onClick={() => navigate('/new-project')}
+            onClick={() => navigate('/client/new-project')}
             className="inline-flex items-center justify-center px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-all shadow-lg shadow-blue-500/30"
           >
             + New Project
@@ -65,12 +150,22 @@ export const Dashboard: React.FC = () => {
       </div>
 
       {/* Stats Grid */}
+      {loading ? (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 animate-pulse">
+              <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-3/4"></div>
+            </div>
+          ))}
+        </div>
+      ) : (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard icon={Layers} label="Total Projects" value={stats.total} color="bg-gray-500 text-gray-600" />
         <StatCard icon={AlertCircle} label="Pending" value={stats.pending} color="bg-yellow-500 text-yellow-600" />
         <StatCard icon={Clock} label="In Progress" value={stats.active} color="bg-blue-500 text-blue-600" />
         <StatCard icon={CheckCircle} label="Completed" value={stats.completed} color="bg-green-500 text-green-600" />
       </div>
+      )}
 
       {/* Project List */}
       <div>
@@ -79,7 +174,17 @@ export const Dashboard: React.FC = () => {
           <span className="text-sm text-gray-500">Sorted by deadline</span>
         </div>
         
-        {sortedProjects.length === 0 ? (
+        {loading ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {[1, 2].map((i) => (
+              <div key={i} className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 animate-pulse">
+                <div className="h-6 bg-gray-200 dark:bg-gray-700 rounded w-3/4 mb-4"></div>
+                <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-full mb-2"></div>
+                <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-2/3"></div>
+              </div>
+            ))}
+          </div>
+        ) : sortedProjects.length === 0 ? (
           <div className="text-center py-20 bg-white dark:bg-gray-800 rounded-3xl border border-dashed border-gray-300 dark:border-gray-700">
             <Layers className="mx-auto h-12 w-12 text-gray-400 mb-4" />
             <h3 className="text-lg font-medium text-gray-900 dark:text-white">No projects found</h3>

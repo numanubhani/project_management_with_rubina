@@ -11,6 +11,10 @@ export const formatDate = (dateString: string) => {
   return format(new Date(dateString), 'MMM dd, yyyy HH:mm');
 };
 
+export const formatDateShort = (dateString: string) => {
+  return format(new Date(dateString), 'MMM');
+};
+
 export const getTimeRemaining = (deadline: string) => {
   const diff = differenceInSeconds(new Date(deadline), new Date());
   if (diff <= 0) return 'Overdue';

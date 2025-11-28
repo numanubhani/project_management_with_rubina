@@ -78,18 +78,6 @@ export const Auth: React.FC = () => {
               </div>
             </div>
 
-            {/* Default Login Hint */}
-            <div className="text-xs text-gray-400 bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
-                <p className="font-semibold mb-1">Demo Credentials:</p>
-                <div className="flex justify-between">
-                    <span>Admin: admin@flowspace.com</span>
-                    <span>Pass: password</span>
-                </div>
-                <div className="flex justify-between mt-1">
-                    <span>Client: client@flowspace.com</span>
-                    <span>Pass: password</span>
-                </div>
-            </div>
 
             <button 
               type="submit"

@@ -1,7 +1,8 @@
 
 import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAppStore } from '../store';
-import { ProjectStatus, UserRole, FileData } from '../types';
+import { ProjectStatus, UserRole } from '../types';
 import { Badge } from '../components/ui/Badge';
 import { Countdown } from '../components/ui/Countdown';
 import { Avatar } from '../components/ui/Avatar';
@@ -11,22 +12,31 @@ import { formatDistanceToNow } from 'date-fns';
 import { 
   ArrowLeft, FileText, Download, Send, CheckCircle, 
   UploadCloud, Clock, MessageSquare, Paperclip, Briefcase, Lock, DollarSign, ShieldCheck,
-  AlertTriangle, Upload, Plus, Bell
+  AlertTriangle, Upload, Plus, Bell, Play
 } from 'lucide-react';
 
-interface ProjectDetailsProps {
-  projectId: string;
-}
-
-export const ProjectDetails: React.FC<ProjectDetailsProps> = ({ projectId }) => {
-  const { projects, user, navigate, addComment, updateProjectStatus, markPaymentCleared, approvePayment, addProjectUpdate } = useAppStore();
+export const ProjectDetails: React.FC = () => {
+  const { id: projectId } = useParams<{ id: string }>();
+  const { projects, user, addComment, updateProjectStatus, markPaymentCleared, approvePayment, addProjectUpdate, loadProjects } = useAppStore();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'overview' | 'comments'>('overview');
   const [newComment, setNewComment] = useState('');
   const [isDeliveryModalOpen, setIsDeliveryModalOpen] = useState(false);
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
   const commentsEndRef = useRef<HTMLDivElement>(null);
 
   const project = projects.find(p => p.id === projectId);
+
+  useEffect(() => {
+    if (projectId && user) {
+      // If project not in store, try to load it
+      if (!project) {
+        setLoading(true);
+        loadProjects().finally(() => setLoading(false));
+      }
+    }
+  }, [projectId, user, project, loadProjects]);
 
   useEffect(() => {
     if (activeTab === 'comments' && commentsEndRef.current) {
@@ -34,11 +44,12 @@ export const ProjectDetails: React.FC<ProjectDetailsProps> = ({ projectId }) => 
     }
   }, [project?.comments, activeTab]);
 
-  if (!project || !user) {
+  if (!project || !user || !projectId) {
+    const dashboardPath = user?.role === UserRole.ADMIN ? '/admin/dashboard' : '/client/dashboard';
     return (
       <div className="flex flex-col items-center justify-center h-96">
         <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200">Project Not Found</h2>
-        <button onClick={() => navigate('/')} className="mt-4 text-blue-600 hover:underline">
+        <button onClick={() => navigate(dashboardPath)} className="mt-4 text-blue-600 hover:underline">
           Back to Dashboard
         </button>
       </div>
@@ -53,6 +64,12 @@ export const ProjectDetails: React.FC<ProjectDetailsProps> = ({ projectId }) => 
     if (!newComment.trim()) return;
     addComment(project.id, newComment);
     setNewComment('');
+  };
+
+  const handleStartProject = () => {
+    if (confirm('Start working on this project? Status will change to "In Progress".')) {
+      updateProjectStatus(project.id, ProjectStatus.IN_PROGRESS);
+    }
   };
 
   const handleMarkCompleted = () => {
@@ -89,7 +106,7 @@ export const ProjectDetails: React.FC<ProjectDetailsProps> = ({ projectId }) => 
     <div className="max-w-5xl mx-auto pb-10">
       {/* Navigation */}
       <button 
-        onClick={() => navigate('/')} 
+        onClick={() => navigate(user.role === UserRole.ADMIN ? '/admin/dashboard' : '/client/dashboard')} 
         className="flex items-center text-sm font-medium text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white mb-6 transition-colors"
       >
         <ArrowLeft size={18} className="mr-1" />
@@ -137,7 +154,16 @@ export const ProjectDetails: React.FC<ProjectDetailsProps> = ({ projectId }) => 
                     {/* Admin Actions */}
                     {isAdmin && project.status !== ProjectStatus.COMPLETED && (
                         <>
-                           {project.status !== ProjectStatus.DELIVERED && (
+                           {project.status === ProjectStatus.PENDING && (
+                                <button 
+                                    onClick={handleStartProject}
+                                    className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors shadow-lg shadow-green-500/20"
+                                >
+                                    <Play size={16} />
+                                    <span>Start Project</span>
+                                </button>
+                           )}
+                           {project.status === ProjectStatus.IN_PROGRESS && (
                                 <button 
                                     onClick={() => setIsDeliveryModalOpen(true)}
                                     className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors shadow-lg shadow-blue-500/20"
@@ -156,15 +182,6 @@ export const ProjectDetails: React.FC<ProjectDetailsProps> = ({ projectId }) => 
                                 </button>
                            )}
                         </>
-                    )}
-                    {!isAdmin && project.status === ProjectStatus.DELIVERED && (
-                        <button 
-                            onClick={handleMarkCompleted}
-                            className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors shadow-lg shadow-green-500/20"
-                        >
-                            <CheckCircle size={16} />
-                            <span>Accept & Complete</span>
-                        </button>
                     )}
                 </div>
             </div>
@@ -481,21 +498,14 @@ const UpdateModal: React.FC<{ projectId: string; onClose: () => void }> = ({ pro
         if (!text.trim()) return;
         setIsSubmitting(true);
 
-        // Simulate upload
-        await new Promise(r => setTimeout(r, 800));
-
-        const uploadedFiles: FileData[] = files.map(f => ({
-            id: Math.random().toString(36).substr(2, 9),
-            name: f.name,
-            size: `${(f.size / 1024).toFixed(1)} KB`,
-            type: f.type,
-            url: 'https://picsum.photos/200', // Mock URL
-            uploadedAt: new Date().toISOString()
-        }));
-
-        addProjectUpdate(projectId, text, uploadedFiles);
+        try {
+            await addProjectUpdate(projectId, text, files);
         setIsSubmitting(false);
         onClose();
+        } catch (error) {
+            setIsSubmitting(false);
+            // Error is handled in store
+        }
     };
 
     return (
@@ -524,6 +534,7 @@ const UpdateModal: React.FC<{ projectId: string; onClose: () => void }> = ({ pro
                         <input 
                             type="file" 
                             multiple
+                            accept="*/*"
                             onChange={handleFileChange}
                             className="hidden" 
                             id="update-files"
@@ -534,6 +545,7 @@ const UpdateModal: React.FC<{ projectId: string; onClose: () => void }> = ({ pro
                                 {files.length > 0 ? `${files.length} files attached` : 'Attach files (optional)'}
                             </span>
                         </label>
+                        <p className="text-xs text-gray-400 mt-1 text-center">Supports all file types: Images, PDFs, Archives, Documents, Presentations, etc.</p>
                     </div>
 
                     <div className="pt-2">
@@ -563,7 +575,7 @@ const FileItem: React.FC<{ file: FileData; isDelivery?: boolean }> = ({ file, is
             </div>
         </div>
         <a 
-            href={file.url} 
+            href={`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}${file.url}`}
             download 
             className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
         >
