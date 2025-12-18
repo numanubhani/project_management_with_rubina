@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { User, Project, Workspace, UserRole, ProjectStatus, FileData, Comment, PaymentStatus, ProjectUpdate } from './types';
+import { User, Project, Workspace, UserRole, ProjectStatus, FileData, Comment, ProjectUpdate, Collaborator, CollaboratorInvitation } from './types';
+import type { PaymentStatus } from './types';
 import toast from 'react-hot-toast';
 import React from 'react';
 import { 
@@ -8,22 +9,23 @@ import {
   userService, 
   projectService, 
   workspaceService,
-  financeService 
+  financeService,
+  collaboratorService
 } from './api/services';
 import { apiClient } from './api/client';
 
-// Helper for System Notifications
-const sendSystemNotification = (title: string, body: string) => {
-    if (!('Notification' in window)) return;
-    
-    if (Notification.permission === 'granted') {
-        new Notification(title, {
-            body,
-            icon: 'https://cdn-icons-png.flaticon.com/512/3043/3043232.png',
-            vibrate: [200, 100, 200]
-        } as any);
-    }
-};
+// Helper for System Notifications (currently unused, kept for future enhancements)
+// const sendSystemNotification = (title: string, body: string) => {
+//     if (!('Notification' in window)) return;
+//     
+//     if (Notification.permission === 'granted') {
+//         new Notification(title, {
+//             body,
+//             icon: 'https://cdn-icons-png.flaticon.com/512/3043/3043232.png',
+//             vibrate: [200, 100, 200]
+//         } as any);
+//     }
+// };
 
 interface AppState {
   user: User | null;
@@ -33,6 +35,7 @@ interface AppState {
   projects: Project[];
   lastCheckTime: string;
   loading: boolean;
+  invitations: CollaboratorInvitation[];
   
   // Actions
   toggleTheme: () => void;
@@ -53,8 +56,14 @@ interface AppState {
   uploadDelivery: (projectId: string, files: File[]) => Promise<void>;
   addComment: (projectId: string, text: string) => Promise<void>;
   addProjectUpdate: (projectId: string, text: string, files: File[]) => Promise<void>;
-  markPaymentCleared: (projectId: string) => Promise<void>;
+  markPaymentCleared: (projectId: string, files?: File[]) => Promise<void>;
   approvePayment: (projectId: string) => Promise<void>;
+  
+  // Collaborator Actions
+  loadInvitations: () => Promise<void>;
+  inviteCollaborator: (projectId: string, userId?: string, email?: string) => Promise<void>;
+  respondToInvitation: (invitationId: string, accept: boolean) => Promise<void>;
+  removeCollaborator: (projectId: string, collaboratorId: string) => Promise<void>;
   
   // Simulation (for demo purposes - can be removed in production)
   simulateIncomingProject: () => void;
@@ -72,6 +81,7 @@ export const useAppStore = create<AppState>()(
       projects: [],
       lastCheckTime: new Date().toISOString(),
       loading: false,
+      invitations: [],
 
       toggleTheme: () => {
         set((state) => {
@@ -104,6 +114,7 @@ export const useAppStore = create<AppState>()(
           // Load user data after login
           await get().loadProjects();
           await get().loadUsers();
+          await get().loadInvitations();
           
           toast.success(`Welcome back, ${response.user.name}!`);
           return true;
@@ -133,6 +144,7 @@ export const useAppStore = create<AppState>()(
           // Load initial data
           await get().loadProjects();
           await get().loadUsers();
+          await get().loadInvitations();
           
           toast.success('Workspace created successfully!');
         } catch (error: any) {
@@ -276,9 +288,6 @@ export const useAppStore = create<AppState>()(
           
           const statusText = status.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
           toast.success(`Project status updated to ${statusText}`);
-          if (status === ProjectStatus.COMPLETED) {
-            toast('Files deleted from server.', { icon: '🗑️' });
-          }
         } catch (error: any) {
           set({ loading: false });
           toast.error(error.message || 'Failed to update project status');
@@ -364,10 +373,10 @@ export const useAppStore = create<AppState>()(
         }
       },
 
-      markPaymentCleared: async (projectId) => {
+      markPaymentCleared: async (projectId, files) => {
         try {
           set({ loading: true });
-          const updatedProject = await projectService.markPaymentCleared(projectId);
+          const updatedProject = await projectService.markPaymentCleared(projectId, files);
           
           set((state) => ({
             projects: state.projects.map(p => 
@@ -396,7 +405,15 @@ export const useAppStore = create<AppState>()(
             loading: false
           }));
           
-          toast.success('Payment approved! Transaction closed.');
+          const isClosed =
+            updatedProject.status === ProjectStatus.COMPLETED &&
+            updatedProject.paymentStatus === PaymentStatus.PAID;
+
+          if (isClosed) {
+            toast.success('Payment approved! Project closed. Files will be deleted after 2 days.');
+          } else {
+            toast.success('Payment approved!');
+          }
         } catch (error: any) {
           set({ loading: false });
           toast.error(error.message || 'Failed to approve payment');
@@ -423,45 +440,75 @@ export const useAppStore = create<AppState>()(
 
         try {
           const updates = await projectService.getUnreadUpdates();
-          
+          // We still update the last check time for potential future use,
+          // but no longer show pop-up toasts or browser notifications.
           if (updates.length > 0) {
-            updates.forEach(update => {
-              const project = get().projects.find(p => 
-                p.updates?.some(u => u.id === update.id)
-              );
-              
-              if (project) {
-                sendSystemNotification(`Update on: ${project.title}`, "Client added new info or files.");
-                
-                toast((t) => (
-                  React.createElement('div', {
-                    onClick: () => { 
-                      window.location.href = `/admin/project/${project.id}`;
-                      toast.dismiss(t.id); 
-                    },
-                    className: "cursor-pointer flex flex-col space-y-1"
-                  }, [
-                    React.createElement('span', { key: '1', className: "font-bold flex items-center" }, `🔔 Update on: ${project.title}`),
-                    React.createElement('span', { key: '2', className: "text-sm opacity-90" }, "Client added info/files"),
-                    React.createElement('span', { key: '3', className: "text-xs bg-black/10 dark:bg-white/10 px-2 py-0.5 rounded w-fit mt-1" }, "Click to View")
-                  ])
-                ), {
-                  icon: '📩',
-                  duration: 5000,
-                  style: {
-                    border: '1px solid #6366f1',
-                    padding: '16px',
-                    color: '#4f46e5',
-                  },
-                  className: 'dark:bg-gray-800 dark:text-indigo-300 dark:border-indigo-800'
-                });
-              }
-            });
-            
             set({ lastCheckTime: new Date().toISOString() });
           }
         } catch (error) {
           console.error('Failed to check updates:', error);
+        }
+      },
+
+      loadInvitations: async () => {
+        try {
+          const invitations = await collaboratorService.getMyInvitations();
+          set({ invitations });
+        } catch (error: any) {
+          console.error('Failed to load invitations:', error);
+          set({ invitations: [] });
+        }
+      },
+
+      inviteCollaborator: async (projectId, userId, email) => {
+        try {
+          set({ loading: true });
+          const invitation = await collaboratorService.inviteCollaborator(projectId, userId, email);
+          
+          // Reload projects to get updated collaborator list
+          await get().loadProjects();
+          
+          set({ loading: false });
+          toast.success('Collaborator invitation sent!');
+        } catch (error: any) {
+          set({ loading: false });
+          toast.error(error.message || 'Failed to invite collaborator');
+          throw error;
+        }
+      },
+
+      respondToInvitation: async (invitationId, accept) => {
+        try {
+          set({ loading: true });
+          await collaboratorService.respondToInvitation(invitationId, accept);
+          
+          // Reload invitations and projects
+          await get().loadInvitations();
+          await get().loadProjects();
+          
+          set({ loading: false });
+          toast.success(accept ? 'Invitation accepted! You are now a collaborator.' : 'Invitation rejected.');
+        } catch (error: any) {
+          set({ loading: false });
+          toast.error(error.message || 'Failed to respond to invitation');
+          throw error;
+        }
+      },
+
+      removeCollaborator: async (projectId, collaboratorId) => {
+        try {
+          set({ loading: true });
+          await collaboratorService.removeCollaborator(projectId, collaboratorId);
+          
+          // Reload projects to get updated collaborator list
+          await get().loadProjects();
+          
+          set({ loading: false });
+          toast.success('Collaborator removed successfully');
+        } catch (error: any) {
+          set({ loading: false });
+          toast.error(error.message || 'Failed to remove collaborator');
+          throw error;
         }
       }
     }),

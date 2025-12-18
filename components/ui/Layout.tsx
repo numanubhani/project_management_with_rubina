@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAppStore } from '../../store';
 import { LogOut, Moon, Sun, LayoutGrid, PlusCircle, Users, Wallet, User as UserIcon, Menu, X } from 'lucide-react';
 import { UserRole } from '../../types';
+import { NotificationBell } from './NotificationBell';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -153,6 +154,17 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <span className="font-bold text-lg text-gray-900 dark:text-white">FlowSpace</span>
             </div>
             <div className="flex items-center space-x-2">
+                <NotificationBell />
+                <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300 flex items-center justify-center font-bold text-xs">
+                    {user.name.charAt(0)}
+                </div>
+            </div>
+         </header>
+
+         {/* Desktop Header */}
+         <header className="hidden md:flex bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4 items-center justify-end sticky top-0 z-10 shrink-0">
+            <div className="flex items-center space-x-3">
+                <NotificationBell />
                 <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300 flex items-center justify-center font-bold text-xs">
                     {user.name.charAt(0)}
                 </div>

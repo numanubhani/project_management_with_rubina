@@ -42,7 +42,10 @@ export const Dashboard: React.FC = () => {
           const myProjects = currentProjects.filter(p => {
             if (p.workspaceId !== user.workspaceId) return false;
             if (user.role === UserRole.CLIENT) {
-              return p.clientId === user.id;
+              // Include projects where user is the client OR a collaborator
+              const isClient = p.clientId === user.id;
+              const isCollaborator = p.collaborators?.some(collab => collab.userId === user.id) || false;
+              return isClient || isCollaborator;
             }
             return true;
           });
@@ -105,7 +108,10 @@ export const Dashboard: React.FC = () => {
   const myProjects = projects.filter(p => {
     if (p.workspaceId !== user.workspaceId) return false;
     if (user.role === UserRole.CLIENT) {
-      return p.clientId === user.id;
+      // Include projects where user is the client OR a collaborator
+      const isClient = p.clientId === user.id;
+      const isCollaborator = p.collaborators?.some(collab => collab.userId === user.id) || false;
+      return isClient || isCollaborator;
     }
     return true; // Admin sees all in workspace
   });

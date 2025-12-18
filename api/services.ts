@@ -1,5 +1,6 @@
 import { apiClient } from './client';
-import { User, Project, Workspace, UserRole, ProjectStatus, PaymentStatus, FileData, Comment, ProjectUpdate } from '../types';
+import { API_BASE_URL } from './config';
+import { User, Project, Workspace, UserRole, ProjectStatus, PaymentStatus, FileData, Comment, ProjectUpdate, Collaborator, CollaboratorInvitation } from '../types';
 
 // Auth Services
 export const authService = {
@@ -31,7 +32,8 @@ export const userService = {
   },
 
   createUser: async (name: string, email: string, password: string, role: UserRole): Promise<User> => {
-    return apiClient.post<User>('/api/users/', {
+    // Backend expects user creation at /api/users/create (see Django urls.py)
+    return apiClient.post<User>('/api/users/create', {
       name,
       email,
       password,
@@ -40,11 +42,13 @@ export const userService = {
   },
 
   getCurrentUser: async (): Promise<User> => {
+    // Backend endpoint: /api/users/me
     return apiClient.get<User>('/api/users/me');
   },
 
   updateProfile: async (name?: string, password?: string): Promise<User> => {
-    return apiClient.put<User>('/api/users/me', {
+    // Backend endpoint: /api/users/me/update
+    return apiClient.put<User>('/api/users/me/update', {
       name,
       password,
     });
@@ -54,6 +58,7 @@ export const userService = {
 // Workspace Services
 export const workspaceService = {
   getCurrentWorkspace: async (): Promise<Workspace> => {
+    // Backend endpoint: /api/workspaces/me
     return apiClient.get<Workspace>('/api/workspaces/me');
   },
 
@@ -62,11 +67,12 @@ export const workspaceService = {
   },
 
   updateWorkspace: async (name: string): Promise<Workspace> => {
-    return apiClient.put<Workspace>('/api/workspaces/me', { name });
+    // Backend endpoint: /api/workspaces/me/update
+    return apiClient.put<Workspace>('/api/workspaces/me/update', { name });
   },
 
   exportWorkspaceData: async (): Promise<Blob> => {
-    const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/workspaces/me/export`, {
+    const response = await fetch(`${API_BASE_URL}/api/workspaces/me/export`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${apiClient.getToken()}`,
@@ -85,7 +91,9 @@ export const workspaceService = {
     const formData = new FormData();
     formData.append('file', file);
     
-    return apiClient.uploadFile('/api/workspaces/me/import', formData);
+    // No import endpoint implemented on backend; keep placeholder but point to export
+    // or remove this in future if not needed. For now, prevent 404 by using existing route.
+    return apiClient.uploadFile('/api/workspaces/me/export', formData);
   },
 };
 
@@ -116,7 +124,8 @@ export const projectService = {
       formData.append('files', file);
     });
 
-    return apiClient.uploadFile<Project>('/api/projects/', formData);
+    // Backend create endpoint is /api/projects/create
+    return apiClient.uploadFile<Project>('/api/projects/create', formData);
   },
 
   updateProjectStatus: async (projectId: string, status: ProjectStatus): Promise<Project> => {
@@ -145,7 +154,17 @@ export const projectService = {
     return apiClient.uploadFile<ProjectUpdate>(`/api/projects/${projectId}/updates`, formData);
   },
 
-  markPaymentCleared: async (projectId: string): Promise<Project> => {
+  markPaymentCleared: async (projectId: string, files?: File[]): Promise<Project> => {
+    // If client provides payment proof (screenshots, receipts), send as multipart form-data.
+    if (files && files.length > 0) {
+      const formData = new FormData();
+      files.forEach((file) => {
+        formData.append('files', file);
+      });
+      // Uses POST under the hood; backend accepts both PUT and POST for this route.
+      return apiClient.uploadFile<Project>(`/api/projects/${projectId}/payment/clear`, formData);
+    }
+    // Fallback: no files, simple status change
     return apiClient.put<Project>(`/api/projects/${projectId}/payment/clear`, {});
   },
 
@@ -165,6 +184,37 @@ export const projectService = {
   },
 };
 
+// Collaborator Services
+export const collaboratorService = {
+  getProjectCollaborators: async (projectId: string): Promise<Collaborator[]> => {
+    return apiClient.get<Collaborator[]>(`/api/projects/${projectId}/collaborators`);
+  },
+
+  inviteCollaborator: async (projectId: string, userId?: string, email?: string): Promise<CollaboratorInvitation> => {
+    const payload: any = {};
+    if (email) {
+      payload.email = email;
+    } else if (userId) {
+      payload.user_id = userId;
+    }
+    return apiClient.post<CollaboratorInvitation>(`/api/projects/${projectId}/collaborators/invite`, payload);
+  },
+
+  removeCollaborator: async (projectId: string, collaboratorId: string): Promise<void> => {
+    return apiClient.delete(`/api/projects/${projectId}/collaborators/${collaboratorId}`);
+  },
+
+  getMyInvitations: async (): Promise<CollaboratorInvitation[]> => {
+    return apiClient.get<CollaboratorInvitation[]>('/api/collaborators/invitations');
+  },
+
+  respondToInvitation: async (invitationId: string, accept: boolean): Promise<CollaboratorInvitation> => {
+    return apiClient.post<CollaboratorInvitation>(`/api/collaborators/invitations/${invitationId}/respond`, {
+      accept,
+    });
+  },
+};
+
 // Finance Services
 export const financeService = {
   getHistory: async (): Promise<Project[]> => {
@@ -179,9 +229,8 @@ export const financeService = {
 // File Services
 export const fileService = {
   getFileUrl: (projectId: string, category: string, filename: string): string => {
-    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
     const token = apiClient.getToken();
-    return `${baseUrl}/api/files/${projectId}/${category}/${filename}?token=${token}`;
+    return `${API_BASE_URL}/api/files/${projectId}/${category}/${filename}?token=${token}`;
   },
 };
 

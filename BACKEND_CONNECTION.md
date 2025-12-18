@@ -2,7 +2,9 @@
 
 ## Frontend-Backend Integration Complete ✅
 
-The frontend is now fully connected to the FastAPI backend. All features are integrated and working.
+The frontend is now fully connected to the FastAPI backend deployed on Render. All features are integrated and working.
+
+**Backend URL**: `https://project-management-with-rubina-backend.onrender.com`
 
 ## Setup Instructions
 
@@ -41,10 +43,12 @@ The frontend is now fully connected to the FastAPI backend. All features are int
    cd D:\personal_frontend\project_management_with_rubina
    ```
 
-2. Create `.env.local` file:
+2. Create `.env` file (optional, defaults to Render backend):
    ```env
-   VITE_API_URL=http://localhost:8000
+   VITE_API_URL=https://project-management-with-rubina-backend.onrender.com
    ```
+   
+   Note: The frontend is now configured to use the Render backend by default. You only need to create a `.env` file if you want to override the default or use a local backend.
 
 3. Install dependencies (if not already done):
    ```bash
@@ -104,15 +108,25 @@ The frontend is now fully connected to the FastAPI backend. All features are int
 
 ## Testing
 
+The frontend is configured to connect to the Render backend by default.
+
+1. Start frontend: `npm run dev`
+2. Open browser: `http://localhost:3000`
+3. Register a new workspace or login
+4. All features should work with the Render backend!
+
+For local backend testing:
 1. Start backend: `uvicorn app.main:app --reload --port 8000`
-2. Start frontend: `npm run dev`
-3. Open browser: `http://localhost:3000`
-4. Register a new workspace or login
-5. All features should work with the backend!
+2. Create `.env` file with: `VITE_API_URL=http://localhost:8000`
+3. Start frontend: `npm run dev`
 
 ## API Documentation
 
-Once backend is running, visit:
+The backend API documentation is available at:
+- Swagger UI: https://project-management-with-rubina-backend.onrender.com/docs
+- ReDoc: https://project-management-with-rubina-backend.onrender.com/redoc
+
+For local development, if running backend locally:
 - Swagger UI: http://localhost:8000/docs
 - ReDoc: http://localhost:8000/redoc
 

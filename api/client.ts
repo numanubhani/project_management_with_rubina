@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import { API_BASE_URL } from './config';
 
 class ApiClient {
   private baseURL: string;
@@ -47,7 +47,29 @@ class ApiClient {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ detail: response.statusText }));
-        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+        
+        // Provide user-friendly error messages for common backend issues
+        let errorMessage = errorData.detail || `HTTP error! status: ${response.status}`;
+        
+        if (response.status === 500) {
+          if (errorData.error && errorData.error.includes('no such table')) {
+            errorMessage = 'Database tables not initialized. Please contact the backend administrator to run database migrations.';
+          } else if (errorData.error) {
+            errorMessage = `Server error: ${errorData.error}`;
+          } else {
+            errorMessage = 'Internal server error. Please try again later or contact support.';
+          }
+        } else if (response.status === 401) {
+          errorMessage = 'Authentication failed. Please check your credentials.';
+        } else if (response.status === 403) {
+          errorMessage = 'You do not have permission to perform this action.';
+        } else if (response.status === 404) {
+          errorMessage = 'The requested resource was not found.';
+        } else if (response.status === 422) {
+          errorMessage = errorData.detail || 'Invalid input. Please check your data and try again.';
+        }
+        
+        throw new Error(errorMessage);
       }
 
       return await response.json();
@@ -98,7 +120,21 @@ class ApiClient {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ detail: response.statusText }));
-      throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+      
+      // Provide user-friendly error messages for common backend issues
+      let errorMessage = errorData.detail || `HTTP error! status: ${response.status}`;
+      
+      if (response.status === 500) {
+        if (errorData.error && errorData.error.includes('no such table')) {
+          errorMessage = 'Database tables not initialized. Please contact the backend administrator to run database migrations.';
+        } else if (errorData.error) {
+          errorMessage = `Server error: ${errorData.error}`;
+        } else {
+          errorMessage = 'Internal server error. Please try again later or contact support.';
+        }
+      }
+      
+      throw new Error(errorMessage);
     }
 
     return await response.json();

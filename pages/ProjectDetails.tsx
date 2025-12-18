@@ -1,30 +1,32 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAppStore } from '../store';
-import { ProjectStatus, UserRole } from '../types';
+import { ProjectStatus, UserRole, FileData } from '../types';
 import { Badge } from '../components/ui/Badge';
 import { Countdown } from '../components/ui/Countdown';
 import { Avatar } from '../components/ui/Avatar';
 import { DeliveryModal } from '../components/projects/DeliveryModal';
+import { DiscussionArea } from '../components/projects/DiscussionArea';
+import { CollaboratorSection } from '../components/projects/CollaboratorSection';
 import { formatCurrency, formatDate } from '../utils';
-import { formatDistanceToNow } from 'date-fns';
+import { API_BASE_URL } from '../api/config';
 import { 
-  ArrowLeft, FileText, Download, Send, CheckCircle, 
-  UploadCloud, Clock, MessageSquare, Paperclip, Briefcase, Lock, DollarSign, ShieldCheck,
-  AlertTriangle, Upload, Plus, Bell, Play
+  ArrowLeft, FileText, Download, CheckCircle, 
+  UploadCloud, Clock, Paperclip, Briefcase, Lock, DollarSign, ShieldCheck,
+  Play, Eye
 } from 'lucide-react';
 
 export const ProjectDetails: React.FC = () => {
   const { id: projectId } = useParams<{ id: string }>();
-  const { projects, user, addComment, updateProjectStatus, markPaymentCleared, approvePayment, addProjectUpdate, loadProjects } = useAppStore();
+  const { projects, user, updateProjectStatus, markPaymentCleared, approvePayment, loadProjects } = useAppStore();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'overview' | 'comments'>('overview');
-  const [newComment, setNewComment] = useState('');
   const [isDeliveryModalOpen, setIsDeliveryModalOpen] = useState(false);
-  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
+  const [isPaymentProofModalOpen, setIsPaymentProofModalOpen] = useState(false);
+  const [isPaymentReviewModalOpen, setIsPaymentReviewModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const commentsEndRef = useRef<HTMLDivElement>(null);
+  const [activeTab, setActiveTab] = useState<'description' | 'discussion'>('description');
+  const [lastSeenDiscussionCount, setLastSeenDiscussionCount] = useState(0);
 
   const project = projects.find(p => p.id === projectId);
 
@@ -38,11 +40,15 @@ export const ProjectDetails: React.FC = () => {
     }
   }, [projectId, user, project, loadProjects]);
 
+  // Track discussion item count (comments + updates) for unread badge
+  const discussionCount = project ? project.comments.length + project.updates.length : 0;
+
   useEffect(() => {
-    if (activeTab === 'comments' && commentsEndRef.current) {
-      commentsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    // Initialize last seen count when project loads
+    if (discussionCount > 0 && lastSeenDiscussionCount === 0) {
+      setLastSeenDiscussionCount(discussionCount);
     }
-  }, [project?.comments, activeTab]);
+  }, [discussionCount, lastSeenDiscussionCount]);
 
   if (!project || !user || !projectId) {
     const dashboardPath = user?.role === UserRole.ADMIN ? '/admin/dashboard' : '/client/dashboard';
@@ -59,13 +65,6 @@ export const ProjectDetails: React.FC = () => {
   const isAdmin = user.role === UserRole.ADMIN;
   const isCompleted = project.status === ProjectStatus.COMPLETED;
 
-  const handleCommentSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newComment.trim()) return;
-    addComment(project.id, newComment);
-    setNewComment('');
-  };
-
   const handleStartProject = () => {
     if (confirm('Start working on this project? Status will change to "In Progress".')) {
       updateProjectStatus(project.id, ProjectStatus.IN_PROGRESS);
@@ -73,8 +72,12 @@ export const ProjectDetails: React.FC = () => {
   };
 
   const handleMarkCompleted = () => {
-    if (confirm('Marking this project as completed will delete all files permanently. Are you sure?')) {
-        updateProjectStatus(project.id, ProjectStatus.COMPLETED);
+    if (
+      confirm(
+        'Mark this project as completed? Files will remain available until payment is completed and 2 days have passed.'
+      )
+    ) {
+      updateProjectStatus(project.id, ProjectStatus.COMPLETED);
     }
   };
 
@@ -140,17 +143,6 @@ export const ProjectDetails: React.FC = () => {
                 
                 {/* Actions */}
                 <div className="flex space-x-2 w-full justify-end">
-                    {/* Client Actions */}
-                    {!isAdmin && !isCompleted && (
-                         <button 
-                            onClick={() => setIsUpdateModalOpen(true)}
-                            className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors shadow-lg shadow-indigo-500/20"
-                         >
-                            <Bell size={16} />
-                            <span>Add Update/Info</span>
-                        </button>
-                    )}
-
                     {/* Admin Actions */}
                     {isAdmin && project.status !== ProjectStatus.COMPLETED && (
                         <>
@@ -225,10 +217,10 @@ export const ProjectDetails: React.FC = () => {
                          <span className="text-sm font-medium text-red-500 bg-red-100 dark:bg-red-900/30 px-3 py-1 rounded-full">Unpaid</span>
                          {!isAdmin && (
                              <button 
-                                onClick={() => markPaymentCleared(project.id)}
+                               onClick={() => setIsPaymentProofModalOpen(true)}
                                 className="px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl font-semibold shadow-lg shadow-green-500/30 transition-all"
                              >
-                                Mark Payment Cleared
+                               Mark Payment Cleared
                              </button>
                          )}
                          {isAdmin && <span className="text-sm text-gray-500 italic">Waiting for client...</span>}
@@ -242,10 +234,11 @@ export const ProjectDetails: React.FC = () => {
                          </span>
                          {isAdmin ? (
                              <button 
-                                onClick={() => approvePayment(project.id)}
+                               onClick={() => setIsPaymentReviewModalOpen(true)}
                                 className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold shadow-lg shadow-blue-500/30 transition-all"
                              >
-                                Verify & Approve
+                               <Eye size={16} className="mr-1" />
+                               Verify & Approve
                              </button>
                          ) : (
                              <span className="text-sm text-gray-500 italic">Waiting for admin approval...</span>
@@ -265,57 +258,48 @@ export const ProjectDetails: React.FC = () => {
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-         
-         {/* Left Column: Description & Discussion */}
+        {/* Left Column: Description / Discussion (tabs) */}
          <div className="lg:col-span-2 space-y-8">
-            
+          <div className="bg-white dark:bg-gray-800 rounded-3xl p-6 md:p-8 shadow-sm border border-gray-200 dark:border-gray-700 min-h-[400px]">
             {/* Tabs */}
-            <div className="flex space-x-1 bg-gray-100 dark:bg-gray-700/50 p-1 rounded-xl">
+            <div className="flex space-x-1 bg-gray-100 dark:bg-gray-700/50 p-1 rounded-xl mb-4">
                 <button 
-                    onClick={() => setActiveTab('overview')}
-                    className={`flex-1 flex items-center justify-center py-2.5 text-sm font-medium rounded-lg transition-all ${activeTab === 'overview' ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'}`}
-                >
-                    <FileText size={16} className="mr-2" /> Overview & Files
+                onClick={() => setActiveTab('description')}
+                className={`flex-1 py-2.5 text-sm font-medium rounded-lg transition-all flex items-center justify-center ${
+                  activeTab === 'description'
+                    ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
+                }`}
+              >
+                <FileText size={16} className="mr-2" />
+                Description
                 </button>
                 <button 
-                    onClick={() => setActiveTab('comments')}
-                    className={`flex-1 flex items-center justify-center py-2.5 text-sm font-medium rounded-lg transition-all ${activeTab === 'comments' ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'}`}
-                >
-                    <MessageSquare size={16} className="mr-2" /> Discussion <span className="ml-2 bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded-full text-xs">{project.comments.length}</span>
+                onClick={() => {
+                  setActiveTab('discussion');
+                  // Mark discussion as read when tab is opened
+                  setLastSeenDiscussionCount(discussionCount);
+                }}
+                className={`flex-1 py-2.5 text-sm font-medium rounded-lg transition-all flex items-center justify-center ${
+                  activeTab === 'discussion'
+                    ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
+                }`}
+              >
+                Discussion
+                {discussionCount > lastSeenDiscussionCount && activeTab !== 'discussion' && (
+                  <span className="ml-2 inline-flex items-center justify-center px-2 py-0.5 text-[10px] font-semibold rounded-full bg-red-500 text-white">
+                    {discussionCount - lastSeenDiscussionCount}
+                  </span>
+                )}
                 </button>
             </div>
 
-            {activeTab === 'overview' ? (
-                <div className="bg-white dark:bg-gray-800 rounded-3xl p-8 shadow-sm border border-gray-200 dark:border-gray-700 min-h-[400px]">
-                    
-                    {/* Project Updates Alert Section */}
-                    {project.updates && project.updates.length > 0 && (
-                        <div className="mb-8">
-                            <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-4 flex items-center text-indigo-600 dark:text-indigo-400">
-                                <Bell size={16} className="mr-2" /> Recent Updates & Info
+            {activeTab === 'description' ? (
+              <>
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
+                  Description
                             </h3>
-                            <div className="space-y-4">
-                                {project.updates.map((update) => (
-                                    <div key={update.id} className="bg-indigo-50 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-900/30 rounded-xl p-4">
-                                        <div className="flex justify-between items-start mb-2">
-                                            <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wide">Client Update</span>
-                                            <span className="text-xs text-gray-500">{formatDate(update.createdAt)}</span>
-                                        </div>
-                                        <p className="text-gray-800 dark:text-gray-200 text-sm mb-3">{update.text}</p>
-                                        {update.files && update.files.length > 0 && (
-                                            <div className="space-y-2 bg-white dark:bg-gray-800 rounded-lg p-2 border border-gray-100 dark:border-gray-700">
-                                                {update.files.map(f => (
-                                                    <FileItem key={f.id} file={f} />
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Description</h3>
                     <p className="text-gray-600 dark:text-gray-300 leading-relaxed mb-8 whitespace-pre-wrap">
                         {project.description}
                     </p>
@@ -325,101 +309,66 @@ export const ProjectDetails: React.FC = () => {
                             <h4 className="text-xs font-bold uppercase text-gray-400 tracking-wider mb-4 flex items-center">
                                 <Paperclip size={14} className="mr-2" /> Original Requirements
                             </h4>
-                            {isCompleted ? (
-                                <div className="border border-red-100 dark:border-red-900/30 bg-red-50 dark:bg-red-900/10 rounded-xl p-4 flex items-center text-red-600 dark:text-red-400 text-sm">
-                                    <Lock size={16} className="mr-2" /> Files deleted upon completion.
+                {isCompleted && (
+                  <div className="mb-3 border border-yellow-100 dark:border-yellow-900/40 bg-yellow-50 dark:bg-yellow-900/10 rounded-xl p-3 text-xs text-yellow-800 dark:text-yellow-200 flex items-center">
+                    <Lock size={14} className="mr-2" />
+                    Files will be permanently deleted 2 days after payment is completed.
                                 </div>
+                )}
+                {project.clientFiles.length === 0 ? (
+                  <p className="text-sm text-gray-400 italic">No files uploaded.</p>
                             ) : (
-                                <>
-                                    {project.clientFiles.length === 0 && <p className="text-sm text-gray-400 italic">No files uploaded.</p>}
                                     <div className="space-y-3">
-                                        {project.clientFiles.map(file => (
+                    {project.clientFiles.map((file) => (
                                             <FileItem key={file.id} file={file} />
                                         ))}
                                     </div>
-                                </>
                             )}
                         </div>
                         <div>
                             <h4 className="text-xs font-bold uppercase text-gray-400 tracking-wider mb-4 flex items-center">
                                 <CheckCircle size={14} className="mr-2" /> Deliverables
                             </h4>
-                            {isCompleted ? (
-                                <div className="border border-red-100 dark:border-red-900/30 bg-red-50 dark:bg-red-900/10 rounded-xl p-4 flex items-center text-red-600 dark:text-red-400 text-sm">
-                                    <Lock size={16} className="mr-2" /> Files deleted upon completion.
+                {isCompleted && (
+                  <div className="mb-3 border border-yellow-100 dark:border-yellow-900/40 bg-yellow-50 dark:bg-yellow-900/10 rounded-xl p-3 text-xs text-yellow-800 dark:text-yellow-200 flex items-center">
+                    <Lock size={14} className="mr-2" />
+                    Files will be permanently deleted 2 days after payment is completed.
                                 </div>
-                            ) : (
-                                <>
-                                    {project.deliveryFiles.length === 0 && (
+                )}
+                {project.deliveryFiles.length === 0 ? (
                                         <div className="border border-dashed border-gray-200 dark:border-gray-700 rounded-xl p-6 text-center">
                                             <p className="text-sm text-gray-400 italic">No deliveries yet.</p>
                                         </div>
-                                    )}
+                ) : (
                                     <div className="space-y-3">
-                                        {project.deliveryFiles.map(file => (
+                    {project.deliveryFiles.map((file) => (
                                             <FileItem key={file.id} file={file} isDelivery />
                                         ))}
                                     </div>
-                                </>
                             )}
                         </div>
                     </div>
-                </div>
+              </>
             ) : (
-                <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col h-[500px]">
-                     <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                        {project.comments.length === 0 ? (
-                            <div className="h-full flex flex-col items-center justify-center text-gray-400">
-                                <MessageSquare size={40} className="mb-2 opacity-20" />
-                                <p>No comments yet. Start the conversation!</p>
-                            </div>
-                        ) : (
-                            project.comments.map(comment => (
-                                <div key={comment.id} className={`flex space-x-3 ${comment.userId === user.id ? 'flex-row-reverse space-x-reverse' : ''}`}>
-                                    <Avatar name={comment.userName} size="sm" />
-                                    <div className={`flex flex-col ${comment.userId === user.id ? 'items-end' : 'items-start'}`}>
-                                        <div className={`max-w-md px-4 py-3 rounded-2xl text-sm ${
-                                            comment.userId === user.id 
-                                            ? 'bg-blue-600 text-white rounded-tr-none' 
-                                            : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-tl-none'
-                                        }`}>
-                                            {comment.text}
-                                        </div>
-                                        <span className="text-xs text-gray-400 mt-1">
-                                            {formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true })}
-                                        </span>
-                                    </div>
-                                </div>
-                            ))
-                        )}
-                        <div ref={commentsEndRef} />
-                     </div>
-                     <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 rounded-b-3xl">
-                        <form onSubmit={handleCommentSubmit} className="flex gap-2">
-                            <input 
-                                type="text" 
-                                value={newComment}
-                                onChange={(e) => setNewComment(e.target.value)}
-                                placeholder="Type your message..."
-                                className="flex-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
-                            />
-                            <button 
-                                type="submit"
-                                disabled={!newComment.trim()}
-                                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white p-3 rounded-xl transition-colors"
-                            >
-                                <Send size={20} />
-                            </button>
-                        </form>
-                     </div>
-                </div>
+              // Embedded discussion inside the same card
+              <DiscussionArea projectId={project.id} embedded />
             )}
+                     </div>
          </div>
 
          {/* Right Column: Project Info Sidebar */}
          <div className="space-y-6">
+             {/* Collaborators Section */}
+             <CollaboratorSection
+               projectId={project.id}
+               collaborators={project.collaborators || []}
+               canManage={isAdmin || project.clientId === user.id}
+             />
+
              <div className="bg-white dark:bg-gray-800 rounded-3xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
-                <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-4 uppercase tracking-wider">Project Details</h3>
+            <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-4 uppercase tracking-wider">
+              Project Details
+            </h3>
                 
                 <div className="space-y-4">
                     <div className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
@@ -428,16 +377,24 @@ export const ProjectDetails: React.FC = () => {
                             <span className="text-sm font-medium text-gray-900 dark:text-white">
                                 {project.clientId === user.id ? 'You' : 'Client Name'}
                             </span>
-                            <Avatar name={project.clientId === user.id ? user.name : 'Client'} size="sm" className="w-6 h-6 text-[10px]" />
+                  <Avatar
+                    name={project.clientId === user.id ? user.name : 'Client'}
+                    size="sm"
+                    className="w-6 h-6 text-[10px]"
+                  />
                         </div>
                     </div>
                     <div className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
                         <span className="text-sm text-gray-500">Deadline Date</span>
-                        <span className="text-sm font-medium text-gray-900 dark:text-white">{formatDate(project.deadline).split(' ')[0]}</span>
+                <span className="text-sm font-medium text-gray-900 dark:text-white">
+                  {formatDate(project.deadline).split(' ')[0]}
+                </span>
                     </div>
                     <div className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
                         <span className="text-sm text-gray-500">Deadline Time</span>
-                        <span className="text-sm font-medium text-gray-900 dark:text-white">{formatDate(project.deadline).split(' ')[1]}</span>
+                <span className="text-sm font-medium text-gray-900 dark:text-white">
+                  {formatDate(project.deadline).split(' ')[1]}
+                </span>
                     </div>
                     <div className="pt-2">
                         <span className="text-sm text-gray-500 block mb-2">Workspace</span>
@@ -454,13 +411,6 @@ export const ProjectDetails: React.FC = () => {
                 </div>
              </div>
              
-             {/* Hint Box */}
-             <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-3xl p-6 text-white shadow-lg">
-                 <h4 className="font-bold mb-2 flex items-center"><Clock size={16} className="mr-2"/> Pro Tip</h4>
-                 <p className="text-sm text-indigo-100 leading-relaxed">
-                    Keep communication centralized in the discussion tab to maintain a clear audit trail of project changes.
-                 </p>
-             </div>
          </div>
       </div>
 
@@ -470,97 +420,175 @@ export const ProjectDetails: React.FC = () => {
           onClose={() => setIsDeliveryModalOpen(false)} 
         />
       )}
-
-      {isUpdateModalOpen && (
-          <UpdateModal 
-            projectId={project.id} 
-            onClose={() => setIsUpdateModalOpen(false)} 
-          />
+      {isPaymentProofModalOpen && (
+        <PaymentProofModal
+          projectId={project.id}
+          onClose={() => setIsPaymentProofModalOpen(false)}
+        />
       )}
+      {isPaymentReviewModalOpen && (
+        <PaymentReviewModal
+          projectId={project.id}
+          onClose={() => setIsPaymentReviewModalOpen(false)}
+          isAdmin={isAdmin}
+        />
+      )}
+        </div>
+    );
+};
+
+const PaymentProofModal: React.FC<{ projectId: string; onClose: () => void }> = ({ projectId, onClose }) => {
+  const { markPaymentCleared } = useAppStore();
+  const [files, setFiles] = useState<File[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setSubmitting(true);
+      await markPaymentCleared(projectId, files);
+      onClose();
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-md p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+          Upload Payment Proof
+        </h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          Please upload screenshot or receipt of the payment. Admin will verify it before approving.
+        </p>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Payment Screenshot / Receipt
+            </label>
+            <input
+              type="file"
+              accept="image/*,application/pdf"
+              multiple
+              onChange={(e) => setFiles(Array.from(e.target.files || []))}
+              className="block w-full text-sm text-gray-900 dark:text-gray-100 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-blue-900/40 dark:file:text-blue-200"
+              required
+            />
+            <p className="mt-1 text-xs text-gray-400">
+              Supported: images and PDFs. You can select multiple files.
+            </p>
+          </div>
+          <div className="flex justify-end space-x-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+              disabled={submitting}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 text-sm font-semibold rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-60"
+              disabled={submitting || files.length === 0}
+            >
+              {submitting ? 'Submitting...' : 'Submit & Mark Cleared'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 };
 
-const UpdateModal: React.FC<{ projectId: string; onClose: () => void }> = ({ projectId, onClose }) => {
-    const { addProjectUpdate } = useAppStore();
-    const [text, setText] = useState('');
-    const [files, setFiles] = useState<File[]>([]);
-    const [isSubmitting, setIsSubmitting] = useState(false);
+const PaymentReviewModal: React.FC<{ projectId: string; onClose: () => void; isAdmin: boolean }> = ({
+  projectId,
+  onClose,
+  isAdmin,
+}) => {
+  const { projects, approvePayment } = useAppStore();
+  const project = projects.find((p) => p.id === projectId);
+  const [submitting, setSubmitting] = useState(false);
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files) {
-            setFiles(Array.from(e.target.files));
-        }
-    };
+  if (!project) return null;
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!text.trim()) return;
-        setIsSubmitting(true);
+  const handleApprove = async () => {
+    try {
+      setSubmitting(true);
+      await approvePayment(projectId);
+      onClose();
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
-        try {
-            await addProjectUpdate(projectId, text, files);
-        setIsSubmitting(false);
-        onClose();
-        } catch (error) {
-            setIsSubmitting(false);
-            // Error is handled in store
-        }
-    };
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-lg p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2 flex items-center">
+          <ShieldCheck size={18} className="mr-2 text-green-600" />
+          Verify Payment
+        </h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          Review the payment screenshots provided by the client. Once you approve, payment status will be marked as paid.
+        </p>
 
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md shadow-2xl p-6">
-                <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Add Project Update</h2>
-                    <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
-                        <ArrowLeft size={24} className="rotate-180" />
-                    </button>
+        {project.paymentFiles.length === 0 ? (
+          <div className="border border-dashed border-yellow-300 dark:border-yellow-800 rounded-lg p-4 mb-4 text-sm text-yellow-700 dark:text-yellow-200 bg-yellow-50 dark:bg-yellow-900/10">
+            No payment proof files were uploaded for this project.
+          </div>
+        ) : (
+          <div className="max-h-72 overflow-y-auto mb-4 space-y-3">
+            {project.paymentFiles.map((file) => (
+              <div
+                key={file.id}
+                className="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-700/40"
+              >
+                <div className="flex flex-col">
+                  <span className="text-sm font-medium text-gray-800 dark:text-gray-100 break-all">
+                    {file.name}
+                  </span>
+                  <span className="text-xs text-gray-400">
+                    {file.size} • {new Date(file.uploadedAt).toLocaleString()}
+                  </span>
                 </div>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                    Send new information or files to the Admin. This will trigger a notification.
-                </p>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    <textarea 
-                        required
-                        value={text}
-                        onChange={(e) => setText(e.target.value)}
-                        placeholder="Describe what's new..."
-                        rows={4}
-                        className="w-full p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all dark:text-white"
-                    />
-                    
-                    <div>
-                        <input 
-                            type="file" 
-                            multiple
-                            accept="*/*"
-                            onChange={handleFileChange}
-                            className="hidden" 
-                            id="update-files"
-                        />
-                        <label htmlFor="update-files" className="flex items-center justify-center w-full p-3 border border-dashed border-gray-300 dark:border-gray-600 rounded-xl cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                            <Upload size={18} className="text-gray-400 mr-2" />
-                            <span className="text-sm text-gray-600 dark:text-gray-300">
-                                {files.length > 0 ? `${files.length} files attached` : 'Attach files (optional)'}
-                            </span>
-                        </label>
-                        <p className="text-xs text-gray-400 mt-1 text-center">Supports all file types: Images, PDFs, Archives, Documents, Presentations, etc.</p>
-                    </div>
+                <a
+                  href={`${API_BASE_URL}${file.url}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1 text-xs font-semibold text-blue-600 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50"
+                >
+                  View
+                </a>
+              </div>
+            ))}
+          </div>
+        )}
 
-                    <div className="pt-2">
-                        <button
-                            type="submit"
-                            disabled={isSubmitting || !text.trim()}
-                            className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold disabled:opacity-50 transition-all shadow-lg shadow-indigo-500/30"
-                        >
-                            {isSubmitting ? 'Sending...' : 'Send Update'}
-                        </button>
-                    </div>
-                </form>
-            </div>
+        <div className="flex justify-end space-x-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+            disabled={submitting}
+          >
+            Close
+          </button>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={handleApprove}
+              className="px-4 py-2 text-sm font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+              disabled={submitting || project.paymentFiles.length === 0}
+            >
+              {submitting ? 'Approving...' : 'Approve Payment'}
+            </button>
+          )}
         </div>
-    );
+      </div>
+    </div>
+  );
 };
 
 const FileItem: React.FC<{ file: FileData; isDelivery?: boolean }> = ({ file, isDelivery = false }) => (
@@ -575,7 +603,7 @@ const FileItem: React.FC<{ file: FileData; isDelivery?: boolean }> = ({ file, is
             </div>
         </div>
         <a 
-            href={`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}${file.url}`}
+            href={`${API_BASE_URL}${file.url}`}
             download 
             className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
         >

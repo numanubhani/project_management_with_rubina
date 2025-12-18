@@ -127,10 +127,12 @@ This frontend is fully connected to the FastAPI backend. See [BACKEND_CONNECTION
    npm run dev
    ```
 
-3. **Configure API URL** (create `.env.local`):
+3. **Configure API URL** (optional - defaults to Render backend):
    ```env
-   VITE_API_URL=http://localhost:8000
+   VITE_API_URL=https://project-management-with-rubina-backend.onrender.com
    ```
+   
+   Note: The frontend is configured to use the Render backend by default. Only create a `.env` file if you want to use a local backend or override the default.
 
 ## Notes
 

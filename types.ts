@@ -52,6 +52,29 @@ export interface ProjectUpdate {
   files: FileData[];
   createdAt: string;
   isRead: boolean;
+  senderRole?: UserRole;
+}
+
+export interface Collaborator {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  addedAt: string;
+}
+
+export interface CollaboratorInvitation {
+  id: string;
+  projectId: string;
+  projectTitle: string;
+  invitedById: string;
+  invitedByName: string;
+  invitedUserId: string;
+  invitedUserName: string;
+  invitedUserEmail: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  createdAt: string;
+  respondedAt?: string;
 }
 
 export interface Project {
@@ -68,8 +91,10 @@ export interface Project {
   paidAt?: string;
   clientFiles: FileData[];
   deliveryFiles: FileData[];
+  paymentFiles: FileData[];
   comments: Comment[];
   updates: ProjectUpdate[];
+  collaborators: Collaborator[];
 }
 
 export interface ToastMessage {
